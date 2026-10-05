@@ -1,0 +1,69 @@
+'use strict';
+const app=document.getElementById('app'),KEY='appointment-pilot-v2';
+const esc=x=>String(x??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const uuid=()=>crypto.randomUUID?crypto.randomUUID():Date.now()+'-'+Math.random().toString(16).slice(2);
+let saved;try{saved=JSON.parse(localStorage.getItem(KEY)||'null')}catch{}
+let s=saved||{participant:'',session:uuid(),condition:'standard',trial:0,events:[],submissions:[],outcomes:[],bookings:[],active:false};
+let page='setup',selection={},seq=s.events.length;
+const departments=['全科门诊','健康管理门诊','营养门诊','临床营养门诊','康复医学门诊','运动康复门诊','睡眠门诊','心理咨询门诊'];
+const dates=['10月12日 周一','10月13日 周二','10月14日 周三','10月15日 周四','10月16日 周五','10月17日 周六'];
+const times=['08:30–09:00','09:00–09:30','09:30–10:00','10:00–10:30','10:30–11:00','14:00–14:30','14:30–15:00','15:00–15:30'];
+const doctors=[{name:'张明',level:'主任医师',fee:50},{name:'李文',level:'副主任医师',fee:35},{name:'王宁',level:'主治医师',fee:20}];
+const trials=[
+{patient:'陈建国',campus:'东院区',department:'健康管理门诊',date:dates[2],time:times[3],type:'普通门诊',note:'陈建国想预约10月14日周三上午10点的健康管理门诊，地点在东院区。选择普通门诊即可，医师不限。'},
+{patient:'周淑华',campus:'西院区',department:'临床营养门诊',date:dates[4],time:times[5],type:'专家门诊',note:'为周淑华预约10月16日周五下午2点的临床营养专家门诊，地点在西院区。请注意不是营养门诊，医师不限。'},
+{patient:'陈建国',campus:'西院区',department:'运动康复门诊',date:dates[1],time:times[1],type:'普通门诊',note:'陈建国需要10月13日周二上午9点的运动康复普通门诊，地点在西院区。预约好后，在我的预约中检查信息。'},
+{patient:'周淑华',campus:'东院区',department:'睡眠门诊',date:dates[3],time:times[7],type:'专家门诊',note:'为周淑华预约10月15日周四下午3点的睡眠专家门诊，地点在东院区。提交后可以在我的预约里修改，确认无误后完成本次办理。'}];
+function persist(){try{localStorage.setItem(KEY,JSON.stringify(s))}catch{alert('浏览器无法保存记录，请立即导出数据。')}}
+function log(type,target='',extra={}){s.events.push({sequence:++seq,participant_id:s.participant,session_id:s.session,trial:s.trial+1,condition:s.condition,page,event_type:type,target_id:target,epoch_ms:Date.now(),monotonic_ms:performance.now(),time_origin_ms:performance.timeOrigin,...extra});persist()}
+function mark(type){log(type);const e=document.getElementById('sync');e.classList.add('flash');setTimeout(()=>e.classList.remove('flash'),250)}
+function layout(){log('aoi_layout','',{scroll_x:scrollX,scroll_y:scrollY,viewport_width:innerWidth,viewport_height:innerHeight,regions:[...document.querySelectorAll('[data-aoi]')].map(e=>{const r=e.getBoundingClientRect();return{id:e.dataset.aoi,x:r.x,y:r.y,width:r.width,height:r.height}})})}
+function go(next){page=next;render();log('page_open',next);requestAnimationFrame(layout)}
+function btn(text,action,value='',cls=''){return `<button class="${cls}" data-action="${action}" data-value="${esc(value)}" data-aoi="${action}_${esc(value)}">${text}</button>`}
+function matches(b,t=trials[s.trial]){return ['patient','campus','department','date','time','type'].every(k=>b[k]===t[k])}
+function downloads(){return `<div class="actions">${btn('事件 CSV','export-events')}${btn('提交记录 CSV','export-submissions')}${btn('最终结果 CSV','export-outcomes')}${btn('完整 JSON','export-json')}</div>`}
+function navigation(){return `<nav class="site-nav">${btn('首页','home')}${btn('预约挂号','book')}${btn('我的预约','records')}${btn('就诊须知','guide')}</nav>`}
+function summary(b){return `<dl class="booking-summary">${[['就诊人',b.patient],['就诊院区',b.campus],['预约科室',b.department],['门诊类型',b.type],['医师',b.doctor],['就诊日期',b.date],['时间段',b.time]].map(([k,v])=>`<dt>${k}</dt><dd>${esc(v||'尚未选择')}</dd>`).join('')}</dl>`}
+function render(){document.getElementById('status').textContent=s.active?'便民服务 · 预约挂号':'实验管理';
+if(page==='setup'){app.innerHTML=`<h1>实验管理</h1><div class="card"><div class="setup-fields"><label>参与者编号<input id="pid" value="${esc(s.participant)}" placeholder="P001" maxlength="40"></label><label>科室列表版本<select id="condition"><option value="standard">标准 · 8个科室</option><option value="compact">精简 · 4个科室</option></select></label></div><p class="muted">模拟预约系统，不产生真实挂号。固定日期为2026年10月12日至17日。参与者使用预置虚拟就诊人，无需输入真实信息。</p><div class="actions">${btn('开始新会话','start','','primary')}${s.active?btn('继续当前任务','resume'):''}</div>${downloads()}<p class="muted">数据仅存于当前浏览器。每轮完成后导出文件；新会话会替换当前记录。眼动和录屏须另行采集。</p></div>`;document.getElementById('condition').value=s.condition;return}
+if(page==='brief'){app.innerHTML=`<h1>办理需求</h1><div class="card"><p class="brief">${trials[s.trial].note}</p><p class="muted">请在预约网站中办理。可随时查看这张需求单；预约提交后也可以修改。</p>${btn('进入预约网站','begin','','primary')}</div>`;return}
+if(page==='done'){app.innerHTML=`<h1>本轮已结束</h1><div class="card"><p>请由研究员导出数据。</p><p>${s.events.length} 条事件 · ${s.submissions.length} 次提交 · ${s.outcomes.length} 个任务结果</p>${downloads()}<div class="actions">${btn('返回管理','setup')}</div></div>`;return}
+let body='';
+if(page==='home')body=`<div class="portal-banner"><h1>仁和医院预约服务平台</h1><p>线上预约　按时就诊</p><small>分院区预约 · 普通门诊 / 专家门诊</small></div><div class="service-note">预约提醒：请按院区选择科室。提交后，可在“我的预约”中查看预约凭证或修改信息。</div><div class="home-columns"><section class="card"><h2>预约服务</h2><p>选择院区、科室和就诊时间，完成预约。</p>${btn('预约挂号','book','','primary')}${btn('查看预约记录','records')}</section><section class="card"><h2>服务公告</h2><p>预约开放时间：每日 08:00–17:00</p><p>门诊分布：东院区、西院区</p><p>预约后请核对院区、日期和就诊人。</p></section></div>`;
+if(page==='guide')body=`<h1>就诊须知</h1><div class="card"><p>本平台可预约东、西两个院区的门诊。普通门诊与专家门诊分别排班。</p><p>预约后可进入“我的预约”核对、修改或取消。页面所示日期及号源为固定模拟数据。</p>${btn('返回预约','book')}</div>`;
+if(page==='departments'){const ds=s.condition==='compact'?['健康管理门诊','临床营养门诊','运动康复门诊','睡眠门诊']:departments;body=`<h1>预约挂号</h1><div class="filter-row" data-aoi="campus_filter"><strong>就诊院区</strong>${['东院区','西院区'].map(c=>btn(c,'campus',c,selection.campus===c?'selected':'')).join('')}</div><div class="card"><h2>选择科室</h2><p class="muted">当前院区：${esc(selection.campus)}</p><div class="department-list">${ds.map(d=>btn(d,'department',d)).join('')}</div></div>`}
+if(page==='schedule')body=`<h1>${esc(selection.department)}</h1><div class="filter-row"><span>${esc(selection.campus)}</span>${btn('更换科室','departments')}</div><div class="filter-row" data-aoi="type_filter"><strong>门诊类型</strong>${['普通门诊','专家门诊'].map(v=>btn(v,'type',v,selection.type===v?'selected':'')).join('')}</div><div class="date-tabs" data-aoi="date_filter">${dates.map(v=>btn(v,'date',v,selection.date===v?'selected':'')).join('')}</div><div class="card"><h2>可预约门诊</h2><div class="doctor-list">${doctors.filter(d=>selection.type==='专家门诊'?d.level!=='主治医师':true).map(d=>`<article data-aoi="doctor_${d.name}"><div class="doctor-info"><div class="doctor-avatar" aria-hidden="true">${d.name.slice(0,1)}</div><div><strong>${d.name}</strong>　${d.level}<p class="muted">${esc(selection.department)} · ${esc(selection.campus)}<br>挂号费 ¥${d.fee} · 门诊楼二层</p></div></div>${btn('选择时间','doctor',d.name,'primary')}</article>`).join('')}</div></div>`;
+if(page==='slots')body=`<h1>选择就诊时间</h1><div class="card"><p>${esc(selection.department)}　${esc(selection.doctor)}<br>${esc(selection.campus)}　${esc(selection.date)}　${esc(selection.type)}</p><h2>上午</h2><div class="slot-list">${times.slice(0,5).map(v=>btn(v+'<small>剩余 3 个号源</small>','slot',v)).join('')}</div><h2>下午</h2><div class="slot-list">${times.slice(5).map(v=>btn(v+'<small>剩余 2 个号源</small>','slot',v)).join('')}</div><div class="actions">${btn('返回排班','schedule')}</div></div>`;
+if(page==='confirm')body=`<h1>确认预约</h1><div class="card"><h2>选择就诊人</h2><div class="filter-row" data-aoi="patient_selector">${['陈建国','周淑华'].map(v=>btn(v,'patient',v,selection.patient===v?'selected':'')).join('')}</div><h2>预约信息</h2><div data-aoi="booking_summary">${summary(selection)}</div><label class="check"><input type="checkbox" id="agreement" ${selection.agreed?'checked':''}> 已核对预约信息及就诊须知</label><div class="actions">${btn('提交预约','submit','','primary')}${btn('修改时间','slots')}${btn('重新选择科室','departments')}</div><p id="form-error" class="warning" role="alert"></p></div>`;
+if(page==='records'){const list=s.bookings.filter(b=>b.trial===s.trial);body=`<h1>我的预约</h1><div class="card">${list.length?list.map(b=>`<article class="record" data-aoi="record_${b.id}"><div class="record-head"><strong>${esc(b.department)}</strong><span class="receipt-label">${b.cancelled?'已取消':'预约成功'}</span></div>${summary(b)}<p class="muted">预约编号：${b.id}<br>就诊地点：所选院区门诊楼二层<br>请按预约时段到达，携带就诊凭证。</p>${!b.cancelled?`<div class="actions">${btn('修改预约','edit',b.id)}${btn('取消预约','cancel',b.id)}</div>`:''}</article>`).join(''):'<p>暂无预约记录。</p>'+btn('去预约','book','','primary')}</div>`}
+app.innerHTML=navigation()+`<div class="breadcrumb">首页 / ${page==='home'?'服务首页':'预约服务'}</div>`+body+`<aside class="experiment-bar"><span>办理 ${s.trial+1} / ${trials.length}</span>${btn('查看需求单','requirement')}${btn('完成本次办理','finish')}${btn('放弃本次办理','abandon')}${btn('研究员导出','research-export')}</aside>`;
+}
+function startTrial(){selection={campus:'东院区',type:'普通门诊',date:dates[0],patient:'陈建国'};mark('TASK_START');go('home')}
+function submit(){if(!selection.agreed){document.getElementById('form-error').textContent='请先核对信息并勾选确认。';log('validation_error','agreement');return}let b={...selection,id:selection.editId||'YY'+Date.now().toString().slice(-9),trial:s.trial,cancelled:false};delete b.editId;delete b.agreed;const old=s.bookings.findIndex(v=>v.id===b.id);if(old>=0)s.bookings[old]=b;else s.bookings.push(b);s.submissions.push({...b,participant_id:s.participant,session_id:s.session,epoch_ms:Date.now(),matches_requirement:matches(b)});log('appointment_submit',b.id,{booking:{...b}});go('records')}
+function finish(abandon=false){const active=s.bookings.filter(b=>b.trial===s.trial&&!b.cancelled);s.outcomes.push({participant_id:s.participant,session_id:s.session,trial:s.trial+1,condition:s.condition,epoch_ms:Date.now(),outcome:abandon?'abandonment':active.length===1&&matches(active[0])?'correct_final_booking':active.length?'incorrect_final_booking':'no_booking',active_booking_count:active.length,final_bookings:active});mark('TASK_END');s.trial++;if(s.trial>=trials.length){s.active=false;mark('SESSION_END');go('done')}else go('brief')}
+app.addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;const a=b.dataset.action,v=b.dataset.value;log('click',b.dataset.aoi||a,{value:v,mouse_x:e.clientX,mouse_y:e.clientY});
+if(a.startsWith('export-')){if(a==='export-json')download(JSON.stringify(s,null,2),'backup','json','application/json');else exportCSV(s[a.slice(7)],a.slice(7));return}
+if(a==='start'){const id=document.getElementById('pid').value.trim();if(!id){document.getElementById('pid').focus();return}if(s.events.length&&!confirm('新会话会替换当前记录。是否已导出并继续？'))return;s={participant:id,session:uuid(),condition:document.getElementById('condition').value,trial:0,events:[],submissions:[],outcomes:[],bookings:[],active:true};seq=0;mark('SESSION_START');go('brief');return}
+if(a==='begin')startTrial();if(a==='resume'){selection={campus:'东院区',type:'普通门诊',date:dates[0],patient:'陈建国'};log('session_resume');go('home')}
+if(a==='home'||a==='records'||a==='guide'||a==='schedule'||a==='slots'||a==='departments')go(a);
+if(a==='book'){selection={campus:'东院区',type:'普通门诊',date:dates[0],patient:'陈建国'};go('departments')}
+if(a==='campus'){selection.campus=v;log('selection_change','campus',{value:v});go('departments')}
+if(a==='department'){selection.department=v;go('schedule')}
+if(a==='type'){selection.type=v;delete selection.doctor;go('schedule')}
+if(a==='date'){selection.date=v;go('schedule')}
+if(a==='doctor'){selection.doctor=v;go('slots')}
+if(a==='slot'){selection.time=v;selection.agreed=false;go('confirm')}
+if(a==='patient'){selection.patient=v;selection.agreed=false;go('confirm')}
+if(a==='submit')submit();
+if(a==='edit'){selection={...s.bookings.find(x=>x.id===v),editId:v,agreed:false};log('appointment_edit',v);go('departments')}
+if(a==='cancel'&&confirm('确认取消这条预约？')){s.bookings.find(x=>x.id===v).cancelled=true;log('appointment_cancel',v);go('records')}
+if(a==='requirement'){log('requirement_open');alert(trials[s.trial].note);log('requirement_close')}
+if(a==='finish'&&confirm('确认完成本次办理？之后将进入下一份需求。'))finish();if(a==='abandon'&&confirm('确认放弃本次办理？'))finish(true);
+if(a==='research-export'){log('research_export_open');exportCSV(s.events,'events');exportCSV(s.submissions,'submissions');exportCSV(s.outcomes,'outcomes')}
+if(a==='setup')go('setup');});
+app.addEventListener('change',e=>{if(e.target.id==='agreement'){selection.agreed=e.target.checked;log('agreement_change','agreement',{checked:e.target.checked})}});
+function csvText(rows){if(!rows.length)return '';const keys=[...new Set(rows.flatMap(r=>Object.keys(r)))];const cell=v=>'"'+String(typeof v==='object'?JSON.stringify(v):v??'').replace(/"/g,'""')+'"';return '\uFEFF'+[keys.map(cell).join(','),...rows.map(r=>keys.map(k=>cell(r[k])).join(','))].join('\r\n')}
+function exportCSV(rows,kind){if(!rows.length){alert('暂无'+({events:'事件',submissions:'提交',outcomes:'结果'}[kind]||'')+'记录');return}download(csvText(rows),kind,'csv','text/csv;charset=utf-8')}
+function download(data,kind,ext,mime){const a=document.createElement('a'),url=URL.createObjectURL(new Blob([data],{type:mime}));a.href=url;a.download=`pilot_${s.participant||'session'}_${s.session.slice(0,8)}_${kind}.${ext}`;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1500)}
+let scrollTimer;window.addEventListener('scroll',()=>{clearTimeout(scrollTimer);scrollTimer=setTimeout(()=>{log('scroll','',{scroll_x:scrollX,scroll_y:scrollY});layout()},200)});window.addEventListener('resize',layout);document.addEventListener('visibilitychange',()=>log('visibility','',{hidden:document.hidden}));window.addEventListener('beforeunload',persist);render();
+
